@@ -45,7 +45,7 @@ const initialBoard: Board = [
     { type: 'assassin', color: 'black' },
     { type: 'archer', color: 'black' },
     { type: 'spearman', color: 'black' },
-    { type: 'mage', color: 'black' },
+    { type: 'mage', color: 'black', state: 2 }, // ✅ 초기 쿨다운 2턴
     { type: 'king', color: 'black' },
     { type: 'paladin', color: 'black' },
     { type: 'bard', color: 'black' },
@@ -80,7 +80,7 @@ const initialBoard: Board = [
     { type: 'bard', color: 'white' },
     { type: 'paladin', color: 'white' },
     { type: 'king', color: 'white' },
-    { type: 'mage', color: 'white' },
+    { type: 'mage', color: 'white', state: 2 }, // ✅ 초기 쿨다운 2턴
     { type: 'spearman', color: 'white' },
     { type: 'archer', color: 'white' },
     { type: 'assassin', color: 'white' },
@@ -103,47 +103,52 @@ export default function CustomChessGame() {
   const [waitingForPlayer, setWaitingForPlayer] = useState(false);
 
   useEffect(() => {
-    // ✅ 수정된 부분: 환경에 맞게 자동으로 연결
-    const socketUrl = process.env.NODE_ENV === 'production' 
-      ? window.location.origin  // 프로덕션: 현재 도메인 사용
-      : 'http://localhost:3000'; // 개발: localhost 사용
+    const socketUrl = typeof window !== 'undefined' 
+      ? window.location.origin 
+      : 'http://localhost:3000';
+
+    console.log('🔌 Socket.IO 연결 시도:', socketUrl);
 
     const newSocket = io(socketUrl, {
       path: '/socket.io',
-      transports: ['websocket', 'polling'], // WebSocket 우선, 실패시 polling
+      transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 5,
+      timeout: 20000,
     });
 
-    // 연결 상태 로깅
     newSocket.on('connect', () => {
-      console.log('✅ Socket.IO 연결 성공!');
+      console.log('✅ Socket.IO 연결 성공! ID:', newSocket.id);
     });
 
     newSocket.on('connect_error', (error) => {
-      console.error('❌ Socket.IO 연결 실패:', error);
+      console.error('❌ Socket.IO 연결 실패:', error.message);
     });
 
     setSocket(newSocket);
 
     newSocket.on('gameCreated', ({ gameId, color }) => {
+      console.log('🎮 게임 생성됨:', gameId);
       setGameId(gameId);
       setPlayerColor(color);
       setWaitingForPlayer(true);
     });
 
     newSocket.on('gameJoined', ({ gameId, color }) => {
+      console.log('👥 게임 참가:', gameId);
       setGameId(gameId);
       setPlayerColor(color);
     });
 
     newSocket.on('gameStart', () => {
+      console.log('🚀 게임 시작!');
       setWaitingForPlayer(false);
       setIsMultiplayer(true);
     });
 
     newSocket.on('opponentMove', ({ board, currentPlayer }) => {
+      console.log('♟️ 상대방 이동');
       setBoard(board);
       setCurrentPlayer(currentPlayer);
     });
@@ -157,25 +162,34 @@ export default function CustomChessGame() {
       resetGame();
     });
 
+    newSocket.on('error', (message) => {
+      console.error('⚠️ 서버 오류:', message);
+      alert(message);
+    });
+
     return () => {
+      console.log('🔌 Socket.IO 연결 해제');
       newSocket.close();
     };
   }, []);
 
   const createGame = () => {
-    if (socket) {
+    console.log('🎮 게임 생성 요청, Socket 상태:', socket?.connected);
+    if (socket && socket.connected) {
       socket.emit('createGame');
-    }
-    else{
-      alert('소켓 연결이 없습니다.');
+    } else {
+      alert('소켓 연결이 없습니다. 잠시 후 다시 시도해주세요.');
     }
   };
 
   const joinGame = () => {
     const id = prompt('게임 ID를 입력하세요:');
-    if (id && socket) {
+    if (id && socket && socket.connected) {
+      console.log('🔍 게임 참가 시도:', id);
       socket.emit('joinGame', id);
       setIsMultiplayer(true);
+    } else if (!socket?.connected) {
+      alert('소켓 연결이 없습니다. 잠시 후 다시 시도해주세요.');
     }
   };
 
@@ -192,20 +206,17 @@ export default function CustomChessGame() {
     return bonus;
   };
 
-  // 암살병 이동 수정: 시계방향 순환 (1→2→3→4→1)
   const canAssassinMove = (fromRow: number, fromCol: number, toRow: number, toCol: number): boolean => {
     const getQuadrant = (row: number, col: number): number => {
-      if (row < 4 && col >= 4) return 1; // 우상
-      if (row < 4 && col < 4) return 2;  // 좌상
-      if (row >= 4 && col < 4) return 3; // 좌하
-      if (row >= 4 && col >= 4) return 4; // 우하
+      if (row < 4 && col >= 4) return 1;
+      if (row < 4 && col < 4) return 2;
+      if (row >= 4 && col < 4) return 3;
+      if (row >= 4 && col >= 4) return 4;
       return 0;
     };
 
     const fromQuad = getQuadrant(fromRow, fromCol);
     const toQuad = getQuadrant(toRow, toCol);
-
-    // 시계방향으로 다음 사분면으로만 이동 가능
     const nextQuad = (fromQuad % 4) + 1;
     return toQuad === nextQuad;
   };
@@ -285,6 +296,23 @@ export default function CustomChessGame() {
         break;
 
       case 'mage':
+        // ✅ 마법병은 쿨다운 중에만 이동 가능
+        if (piece.state && piece.state > 0) {
+          const range = 1 + bardBonus;
+          for (let r = -range; r <= range; r++) {
+            for (let c = -range; c <= range; c++) {
+              if (r === 0 && c === 0) continue;
+              const newRow = row + r;
+              const newCol = col + c;
+              if (isValidPosition(newRow, newCol)) {
+                const target = board[newRow][newCol];
+                if (!target) {
+                  moves.push([newRow, newCol]);
+                }
+              }
+            }
+          }
+        }
         break;
 
       case 'spearman':
@@ -427,6 +455,7 @@ export default function CustomChessGame() {
         break;
 
       case 'mage':
+        // ✅ 쿨다운이 0일 때만 공격 가능
         if (!piece.state || piece.state === 0) {
           for (let c = 0; c < 8; c++) {
             if (c !== col) {
@@ -500,10 +529,21 @@ export default function CustomChessGame() {
     return row >= 0 && row < 8 && col >= 0 && col < 8;
   };
 
+  // ✅ 턴 종료 시 모든 마법병의 쿨다운 감소
+  const decreaseMageCooldowns = (board: Board): Board => {
+    return board.map(row => 
+      row.map(piece => {
+        if (piece && piece.type === 'mage' && piece.state && piece.state > 0) {
+          return { ...piece, state: piece.state - 1 };
+        }
+        return piece;
+      })
+    );
+  };
+
   const handleSquareClick = (row: number, col: number) => {
     if (gameOver) return;
     
-    // 멀티플레이어에서 자기 턴이 아니면 무시
     if (isMultiplayer && playerColor !== currentPlayer) return;
 
     if (selectedSquare) {
@@ -517,9 +557,8 @@ export default function CustomChessGame() {
         if (attacks.some(([r, c]) => r === row && c === col)) {
           const target = board[row][col];
           if (target && target.color !== piece.color) {
-            const newBoard = board.map(r => [...r]);
+            let newBoard = board.map(r => [...r]);
             
-            // 킹을 잡으면 게임 종료
             if (target.type === 'king') {
               const winner = piece.color === 'white' ? '백' : '흑';
               setGameOver(`${winner} 승리!`);
@@ -531,14 +570,15 @@ export default function CustomChessGame() {
             newBoard[row][col] = { ...piece };
             newBoard[fromRow][fromCol] = null;
 
+            // ✅ 마법병 공격 후 쿨다운 2턴 설정
             if (piece.type === 'mage') {
-              newBoard[fromRow][fromCol] = { ...piece, state: 2 };
-              newBoard[row][col] = null;
-            } else {
-              if (piece.type === 'warrior') {
-                newBoard[row][col]!.state = ((piece.state || 0) + 1) % 3;
-              }
+              newBoard[row][col]!.state = 2;
+            } else if (piece.type === 'warrior') {
+              newBoard[row][col]!.state = ((piece.state || 0) + 1) % 3;
             }
+
+            // ✅ 턴 종료 시 쿨다운 감소
+            newBoard = decreaseMageCooldowns(newBoard);
 
             const nextPlayer = currentPlayer === 'white' ? 'black' : 'white';
             setBoard(newBoard);
@@ -549,13 +589,16 @@ export default function CustomChessGame() {
             }
           }
         } else if (moves.some(([r, c]) => r === row && c === col)) {
-          const newBoard = board.map(r => [...r]);
+          let newBoard = board.map(r => [...r]);
           newBoard[row][col] = { ...piece };
           newBoard[fromRow][fromCol] = null;
 
           if (piece.type === 'warrior') {
             newBoard[row][col]!.state = ((piece.state || 0) + 1) % 3;
           }
+
+          // ✅ 턴 종료 시 쿨다운 감소
+          newBoard = decreaseMageCooldowns(newBoard);
 
           const nextPlayer = currentPlayer === 'white' ? 'black' : 'white';
           setBoard(newBoard);
@@ -625,10 +668,11 @@ export default function CustomChessGame() {
             선택: {pieceNames[board[selectedSquare[0]][selectedSquare[1]]!.type]}
             {board[selectedSquare[0]][selectedSquare[1]]!.type === 'warrior' && 
               ` (${['이동', '약공격', '강공격'][board[selectedSquare[0]][selectedSquare[1]]!.state || 0]})`}
-            {board[selectedSquare[0]][selectedSquare[1]]!.type === 'mage' && 
-              board[selectedSquare[0]][selectedSquare[1]]!.state && 
-              board[selectedSquare[0]][selectedSquare[1]]!.state! > 0 &&
-              ` (쿨다운: ${board[selectedSquare[0]][selectedSquare[1]]!.state}턴)`}
+            {board[selectedSquare[0]][selectedSquare[1]]!.type === 'mage' && (
+              board[selectedSquare[0]][selectedSquare[1]]!.state && board[selectedSquare[0]][selectedSquare[1]]!.state! > 0
+                ? ` (🕐 쿨다운: ${board[selectedSquare[0]][selectedSquare[1]]!.state}턴)`
+                : ' (⚡ 공격 가능!)'
+            )}
           </p>
         )}
         <button onClick={resetGame} className="reset-button">
@@ -669,6 +713,10 @@ export default function CustomChessGame() {
                     <div className={`piece ${piece.color}`}>
                       <span className="piece-symbol">{pieceSymbols[piece.type]}</span>
                       <span className="piece-name">{pieceNames[piece.type]}</span>
+                      {/* ✅ 마법병 쿨다운 표시 */}
+                      {piece.type === 'mage' && piece.state && piece.state > 0 && (
+                        <span className="cooldown-indicator">{piece.state}</span>
+                      )}
                     </div>
                   )}
                 </div>
@@ -684,7 +732,7 @@ export default function CustomChessGame() {
           <div><strong>🛡 방어병:</strong> 앞 가로 3칸 방어 & 이동</div>
           <div><strong>⚔ 용사:</strong> 이동→약공격→강공격 반복</div>
           <div><strong>✝ 팔라딘:</strong> 넓은 방어(2칸), 2칸 이동</div>
-          <div><strong>🔮 마법병:</strong> 십자 강공격 후 2턴 쿨다운</div>
+          <div><strong>🔮 마법병:</strong> 십자 강공격 후 2턴 쿨다운 (초기 2턴)</div>
           <div><strong>🗡 창술사:</strong> 앞 3칸 이동, 끝만 공격</div>
           <div><strong>🏹 궁병:</strong> 반원 공격, 이동 불가</div>
           <div><strong>🎵 음유시인:</strong> 주변 기물 이동+1</div>
