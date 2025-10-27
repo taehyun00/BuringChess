@@ -570,6 +570,7 @@ export default function CustomChessGame() {
       setSelectedSquare(null);
       setValidMoves([]);
       setAttackRanges([]);
+      
     } else {
       const piece = board[row][col];
       if (piece && piece.color === currentPlayer) {
