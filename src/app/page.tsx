@@ -103,7 +103,28 @@ export default function CustomChessGame() {
   const [waitingForPlayer, setWaitingForPlayer] = useState(false);
 
   useEffect(() => {
-    const newSocket = io('http://localhost:3000');
+    // ✅ 수정된 부분: 환경에 맞게 자동으로 연결
+    const socketUrl = process.env.NODE_ENV === 'production' 
+      ? window.location.origin  // 프로덕션: 현재 도메인 사용
+      : 'http://localhost:3000'; // 개발: localhost 사용
+
+    const newSocket = io(socketUrl, {
+      path: '/socket.io',
+      transports: ['websocket', 'polling'], // WebSocket 우선, 실패시 polling
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionAttempts: 5,
+    });
+
+    // 연결 상태 로깅
+    newSocket.on('connect', () => {
+      console.log('✅ Socket.IO 연결 성공!');
+    });
+
+    newSocket.on('connect_error', (error) => {
+      console.error('❌ Socket.IO 연결 실패:', error);
+    });
+
     setSocket(newSocket);
 
     newSocket.on('gameCreated', ({ gameId, color }) => {
