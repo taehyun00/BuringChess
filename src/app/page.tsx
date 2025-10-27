@@ -39,14 +39,15 @@ const pieceNames: Record<PieceType, string> = {
   bard: '음유시인',
   assassin: '암살병',
 };
+// app/page.tsx에서 initialBoard 부분만 수정
 
 const initialBoard: Board = [
   [
     { type: 'assassin', color: 'black' },
     { type: 'archer', color: 'black' },
-    { type: 'spearman', color: 'black' },
-    { type: 'mage', color: 'black', state: 2 }, // ✅ 초기 쿨다운 2턴
-    { type: 'king', color: 'black' },
+    { type: 'king', color: 'black' }, // ✅ 킹과 창술사 위치 변경
+    { type: 'mage', color: 'black', state: 2 },
+    { type: 'spearman', color: 'black' }, // ✅ 킹과 창술사 위치 변경
     { type: 'paladin', color: 'black' },
     { type: 'bard', color: 'black' },
     { type: 'warrior', color: 'black', state: 0 },
@@ -79,13 +80,14 @@ const initialBoard: Board = [
     { type: 'warrior', color: 'white', state: 0 },
     { type: 'bard', color: 'white' },
     { type: 'paladin', color: 'white' },
-    { type: 'king', color: 'white' },
-    { type: 'mage', color: 'white', state: 2 }, // ✅ 초기 쿨다운 2턴
-    { type: 'spearman', color: 'white' },
+    { type: 'spearman', color: 'white' }, // ✅ 킹과 창술사 위치 변경
+    { type: 'mage', color: 'white', state: 2 },
+    { type: 'king', color: 'white' }, // ✅ 킹과 창술사 위치 변경
     { type: 'archer', color: 'white' },
     { type: 'assassin', color: 'white' },
   ],
 ];
+
 
 export default function CustomChessGame() {
   const [board, setBoard] = useState<Board>(initialBoard);
